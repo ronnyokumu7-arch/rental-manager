@@ -33,6 +33,16 @@ def _require_admin_or_above(current_user: User) -> None:
         )
 
 
+def _get_user_or_404(user_id: int, db: Session) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    return user
+
+
 def _validate_tenant_for_role(db: Session, role: UserRole, tenant_id: int | None) -> None:
     if role == UserRole.super_admin:
         return
@@ -52,7 +62,6 @@ def _validate_tenant_for_role(db: Session, role: UserRole, tenant_id: int | None
 def _check_create_permissions(current_user: User, new_role: UserRole, new_tenant_id: int | None) -> None:
     if current_user.role == UserRole.super_admin:
         return
-
     if current_user.role == UserRole.tenant_admin:
         if new_role == UserRole.super_admin:
             raise HTTPException(
@@ -65,7 +74,6 @@ def _check_create_permissions(current_user: User, new_role: UserRole, new_tenant
                 detail="Tenant admins can only create users within their own tenant",
             )
         return
-
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="You do not have permission to create users",
@@ -75,7 +83,6 @@ def _check_create_permissions(current_user: User, new_role: UserRole, new_tenant
 def _check_update_permissions(current_user: User, target_user: User, update_data: dict) -> None:
     if current_user.role == UserRole.super_admin:
         return
-
     if current_user.id == target_user.id:
         forbidden_fields = {"role", "tenant_id", "is_active"}
         if forbidden_fields.intersection(update_data.keys()):
@@ -84,7 +91,6 @@ def _check_update_permissions(current_user: User, target_user: User, update_data
                 detail="You cannot change your own role, tenant, or active status",
             )
         return
-
     if current_user.role == UserRole.tenant_admin:
         if target_user.tenant_id != current_user.tenant_id:
             raise HTTPException(
@@ -97,10 +103,51 @@ def _check_update_permissions(current_user: User, target_user: User, update_data
                 detail="Tenant admins cannot update super admin users",
             )
         return
-
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="You do not have permission to update other users",
+    )
+
+
+def _check_suspend_permissions(current_user: User, target_user: User) -> None:
+    if current_user.role == UserRole.super_admin:
+        return
+    if current_user.role == UserRole.tenant_admin:
+        if target_user.tenant_id != current_user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant admins can only suspend users within their own tenant",
+            )
+        if target_user.role in (UserRole.super_admin, UserRole.tenant_admin):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant admins can only suspend tenant staff",
+            )
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="You do not have permission to suspend users",
+    )
+
+
+def _check_delete_permissions(current_user: User, target_user: User) -> None:
+    if current_user.role == UserRole.super_admin:
+        return
+    if current_user.role == UserRole.tenant_admin:
+        if target_user.tenant_id != current_user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant admins can only delete users within their own tenant",
+            )
+        if target_user.role in (UserRole.super_admin, UserRole.tenant_admin):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant admins can only delete tenant staff",
+            )
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="You do not have permission to delete users",
     )
 
 
@@ -140,6 +187,7 @@ def list_users(
     tenant_id: int | None = None,
     role: UserRole | None = None,
     is_active: bool | None = None,
+    is_suspended: bool | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -156,6 +204,8 @@ def list_users(
         query = query.filter(User.role == role)
     if is_active is not None:
         query = query.filter(User.is_active == is_active)
+    if is_suspended is not None:
+        query = query.filter(User.is_suspended == is_suspended)
 
     return query.order_by(User.created_at.desc()).all()
 
@@ -166,12 +216,7 @@ def get_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+    user = _get_user_or_404(user_id, db)
 
     if current_user.role == UserRole.super_admin:
         return user
@@ -193,13 +238,7 @@ def update_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
+    user = _get_user_or_404(user_id, db)
     update_data = user_update.model_dump(exclude_unset=True)
     _check_update_permissions(current_user, user, update_data)
 
@@ -227,3 +266,66 @@ def update_user(
         )
     db.refresh(user)
     return user
+
+
+@router.post("/{user_id}/suspend", response_model=UserOut)
+def suspend_user(
+    user_id: int,
+    reason: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    user = _get_user_or_404(user_id, db)
+    if current_user.id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot suspend yourself",
+        )
+    _check_suspend_permissions(current_user, user)
+    if user.is_suspended:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is already suspended",
+        )
+    user.is_suspended = True
+    user.suspension_reason = reason
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/{user_id}/reactivate", response_model=UserOut)
+def reactivate_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    user = _get_user_or_404(user_id, db)
+    _check_suspend_permissions(current_user, user)
+    if not user.is_suspended:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not suspended",
+        )
+    user.is_suspended = False
+    user.suspension_reason = None
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    user = _get_user_or_404(user_id, db)
+    if current_user.id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account",
+        )
+    _check_delete_permissions(current_user, user)
+    db.delete(user)
+    db.commit()

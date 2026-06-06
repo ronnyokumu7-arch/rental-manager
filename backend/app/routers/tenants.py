@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.dependencies.auth import get_current_user
-from app.models.tenants import Tenant
+from app.models.tenants import SubscriptionStatus, Tenant
 from app.models.users import User, UserRole
 from app.schemas.tenant import TenantCreate, TenantOut, TenantUpdate
 
@@ -18,6 +18,16 @@ def _require_super_admin(current_user: User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only super admins can perform this action",
         )
+
+
+def _get_tenant_or_404(tenant_id: int, db: Session) -> Tenant:
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found",
+        )
+    return tenant
 
 
 @router.post("/", response_model=TenantOut, status_code=status.HTTP_201_CREATED)
@@ -44,6 +54,7 @@ def create_tenant(
 @router.get("/", response_model=list[TenantOut])
 def list_tenants(
     is_active: bool | None = None,
+    subscription_status: SubscriptionStatus | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -51,6 +62,8 @@ def list_tenants(
     query = db.query(Tenant)
     if is_active is not None:
         query = query.filter(Tenant.is_active == is_active)
+    if subscription_status is not None:
+        query = query.filter(Tenant.subscription_status == subscription_status)
     return query.order_by(Tenant.created_at.desc()).all()
 
 
@@ -61,13 +74,7 @@ def get_tenant(
     current_user: User = Depends(get_current_user),
 ):
     _require_super_admin(current_user)
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-    if not tenant:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tenant not found",
-        )
-    return tenant
+    return _get_tenant_or_404(tenant_id, db)
 
 
 @router.patch("/{tenant_id}", response_model=TenantOut)
@@ -78,12 +85,7 @@ def update_tenant(
     current_user: User = Depends(get_current_user),
 ):
     _require_super_admin(current_user)
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-    if not tenant:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tenant not found",
-        )
+    tenant = _get_tenant_or_404(tenant_id, db)
     update_data = tenant_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(tenant, field, value)
@@ -97,3 +99,59 @@ def update_tenant(
         )
     db.refresh(tenant)
     return tenant
+
+
+@router.post("/{tenant_id}/suspend", response_model=TenantOut)
+def suspend_tenant(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_super_admin(current_user)
+    tenant = _get_tenant_or_404(tenant_id, db)
+    if tenant.subscription_status == SubscriptionStatus.suspended:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant is already suspended",
+        )
+    if tenant.subscription_status == SubscriptionStatus.cancelled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cancelled tenants cannot be suspended. Reactivate first.",
+        )
+    tenant.subscription_status = SubscriptionStatus.suspended
+    db.commit()
+    db.refresh(tenant)
+    return tenant
+
+
+@router.post("/{tenant_id}/reactivate", response_model=TenantOut)
+def reactivate_tenant(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_super_admin(current_user)
+    tenant = _get_tenant_or_404(tenant_id, db)
+    if tenant.subscription_status == SubscriptionStatus.active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant is already active",
+        )
+    tenant.subscription_status = SubscriptionStatus.active
+    tenant.grace_period_ends_at = None
+    db.commit()
+    db.refresh(tenant)
+    return tenant
+
+
+@router.delete("/{tenant_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_tenant(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_super_admin(current_user)
+    tenant = _get_tenant_or_404(tenant_id, db)
+    db.delete(tenant)
+    db.commit()

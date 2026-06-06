@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.routers import auth, bookings, clients, tenants, users, vehicles
 
+from app.routers import auth, bookings, clients, invoices, payments, subscriptions, tenants, users, vehicles
+
 
 settings = get_settings()
 
@@ -36,3 +38,6 @@ app.include_router(users.router, prefix="/api/v1")
 app.include_router(clients.router, prefix="/api/v1")
 app.include_router(vehicles.router, prefix="/api/v1")
 app.include_router(bookings.router, prefix="/api/v1")
+app.include_router(subscriptions.router, prefix="/api/v1")
+app.include_router(invoices.router, prefix="/api/v1")
+app.include_router(payments.router, prefix="/api/v1")

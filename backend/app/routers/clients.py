@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.dependencies.auth import get_current_user
+from app.dependencies.subscription import require_active_subscription
 from app.models.clients import Client, ClientStatus
 from app.models.users import User
 from app.schemas.client import ClientCreate, ClientOut, ClientUpdate
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/clients", tags=["clients"])
 def create_client(
     client: ClientCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_subscription),
 ):
     db_client = Client(**client.model_dump(), tenant_id=current_user.tenant_id)
     db.add(db_client)
@@ -29,7 +30,21 @@ def read_clients(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return db.query(Client).filter(Client.tenant_id == current_user.tenant_id).all()
+    return db.query(Client).filter(
+        Client.tenant_id == current_user.tenant_id,
+        Client.is_archived == False,
+    ).all()
+
+
+@router.get("/archived", response_model=list[ClientOut])
+def read_archived_clients(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return db.query(Client).filter(
+        Client.tenant_id == current_user.tenant_id,
+        Client.is_archived == True,
+    ).all()
 
 
 @router.get("/{client_id}", response_model=ClientOut)
@@ -52,7 +67,7 @@ def update_client(
     client_id: int,
     updates: ClientUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_subscription),
 ):
     client = db.query(Client).filter(
         Client.id == client_id,
@@ -67,11 +82,94 @@ def update_client(
     return client
 
 
+@router.post("/{client_id}/suspend", response_model=ClientOut)
+def suspend_client(
+    client_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_subscription),
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.tenant_id == current_user.tenant_id,
+    ).first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    if client.status == ClientStatus.suspended:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Client is already suspended")
+    client.status = ClientStatus.suspended
+    db.commit()
+    db.refresh(client)
+    return client
+
+
+@router.post("/{client_id}/reactivate", response_model=ClientOut)
+def reactivate_client(
+    client_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_subscription),
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.tenant_id == current_user.tenant_id,
+    ).first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    if client.status == ClientStatus.active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Client is already active")
+    client.status = ClientStatus.active
+    db.commit()
+    db.refresh(client)
+    return client
+
+
+@router.post("/{client_id}/archive", response_model=ClientOut)
+def archive_client(
+    client_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_subscription),
+):
+    from datetime import datetime, timezone
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.tenant_id == current_user.tenant_id,
+    ).first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    if client.is_archived:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Client is already archived")
+    client.is_archived = True
+    client.archived_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(client)
+    return client
+
+
+@router.post("/{client_id}/restore", response_model=ClientOut)
+def restore_client(
+    client_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_active_subscription),
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.tenant_id == current_user.tenant_id,
+    ).first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    if not client.is_archived:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Client is not archived")
+    client.is_archived = False
+    client.archived_at = None
+    db.commit()
+    db.refresh(client)
+    return client
+
+
 @router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_client(
     client_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_subscription),
 ):
     client = db.query(Client).filter(
         Client.id == client_id,
