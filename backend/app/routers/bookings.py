@@ -12,6 +12,8 @@ from app.models.clients import Client, ClientStatus
 from app.models.users import User
 from app.models.vehicles import Vehicle, VehicleStatus
 from app.schemas.booking import BookingCreate, BookingOut, BookingUpdate
+from app.services.contracts import create_contract_for_booking
+
 
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
@@ -64,6 +66,7 @@ def create_booking(
     )
     db.add(db_booking)
     db.commit()
+    create_contract_for_booking(db_booking, db)
     db.refresh(db_booking)
     return db_booking
 

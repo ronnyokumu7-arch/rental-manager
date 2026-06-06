@@ -44,3 +44,6 @@ class Tenant(Base):
     subscriptions = relationship("Subscription", back_populates="tenant", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="tenant", cascade="all, delete-orphan")
     payments = relationship("Payment", back_populates="tenant", cascade="all, delete-orphan")
+    profile = relationship("TenantProfile", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
+    policies = relationship("TenantPolicy", back_populates="tenant", cascade="all, delete-orphan")
+    contracts = relationship("Contract", back_populates="tenant", cascade="all, delete-orphan")

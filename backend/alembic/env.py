@@ -7,7 +7,11 @@ from sqlalchemy import pool
 from sqlalchemy import engine_from_config
 
 from app.db.database import Base, engine
-from app.models import bookings, clients, invoices, payments, subscriptions, tenants, users, vehicles
+from app.models import (
+    bookings, clients, contracts, invoices, payments,
+    subscriptions, tenant_policies, tenant_profile,
+    tenants, users, vehicles,
+)
 
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))

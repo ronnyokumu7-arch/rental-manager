@@ -7,6 +7,7 @@ from app.dependencies.auth import get_current_user
 from app.models.tenants import SubscriptionStatus, Tenant
 from app.models.users import User, UserRole
 from app.schemas.tenant import TenantCreate, TenantOut, TenantUpdate
+from app.models.tenant_policies import TenantPolicy, DEFAULT_POLICIES
 
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
@@ -48,6 +49,18 @@ def create_tenant(
             detail="A tenant with this email already exists",
         )
     db.refresh(db_tenant)
+    
+    for policy_data in DEFAULT_POLICIES:
+        policy = TenantPolicy(
+            tenant_id=db_tenant.id,
+            section=policy_data["section"],
+            title=policy_data["title"],
+            content=policy_data["content"],
+            display_order=policy_data["display_order"],
+            is_active=True,
+        )
+        db.add(policy)
+    db.commit()
     return db_tenant
 
 
