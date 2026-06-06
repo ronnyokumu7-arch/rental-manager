@@ -34,6 +34,8 @@ class UserOut(BaseModel):
     email: EmailStr
     role: UserRole
     is_active: bool
+    is_suspended: bool = False
+    suspension_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
