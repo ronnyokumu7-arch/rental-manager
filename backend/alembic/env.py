@@ -8,8 +8,8 @@ from sqlalchemy import engine_from_config
 
 from app.db.database import Base, engine
 from app.models import (
-    bookings, clients, contracts, invoices, payments,
-    subscriptions, tenant_policies, tenant_profile,
+    bookings, clients, contracts, invoices, password_reset,
+    payments, subscriptions, tenant_policies, tenant_profile,
     tenants, users, vehicles,
 )
 

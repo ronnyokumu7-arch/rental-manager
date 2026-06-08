@@ -307,3 +307,45 @@ def send_password_changed(
     <p>If you did not make this change, please contact your administrator immediately.</p>
     """
     return _send(to, "Password Changed", _base_template("Password Changed", body))
+
+
+def send_password_reset_email(
+    to: str,
+    full_name: str,
+    reset_link: str,
+):
+    body = f"""
+    <p>Dear {full_name},</p>
+    <p>We received a request to reset your Rental Manager password.</p>
+    <p>Click the button below to set a new password. This link expires in <strong>15 minutes</strong>.</p>
+    <a href="{reset_link}" class="btn">Reset my password</a>
+    <p style="margin-top: 24px; font-size: 13px; color: #888888;">
+        If you did not request a password reset, you can safely ignore this email.
+        Your password will not change.
+    </p>
+    <p style="font-size: 13px; color: #888888;">
+        Or copy this link into your browser:<br>
+        <span style="color: #4f8cff;">{reset_link}</span>
+    </p>
+    """
+    return _send(
+        to,
+        "Reset your Rental Manager password",
+        _base_template("Password Reset Request", body),
+    )
+
+
+def send_password_reset_success(
+    to: str,
+    full_name: str,
+):
+    body = f"""
+    <p>Dear {full_name},</p>
+    <p>Your Rental Manager password has been successfully reset.</p>
+    <p>If you did not make this change, please contact your administrator immediately.</p>
+    """
+    return _send(
+        to,
+        "Your password has been reset",
+        _base_template("Password Reset Successful", body),
+    )

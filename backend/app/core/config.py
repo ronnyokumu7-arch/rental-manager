@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Optional
 
 from pydantic_settings import BaseSettings
 
@@ -14,8 +15,15 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     from_email: str = "onboarding@resend.dev"
     from_name: str = "Rental Manager"
+    superadmin_password: str = "changeme"
+    frontend_url: str = "http://localhost:3000"
 
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
     }
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

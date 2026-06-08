@@ -11,6 +11,7 @@ class ClientBase(BaseModel):
     email: Optional[EmailStr] = None
     phone: str
     id_number: Optional[str] = None
+    dl_number: Optional[str] = None
     residential_address: Optional[str] = None
     work_address: Optional[str] = None
     next_of_kin_name: Optional[str] = None
@@ -26,6 +27,7 @@ class ClientUpdate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     id_number: Optional[str] = None
+    dl_number: Optional[str] = None
     residential_address: Optional[str] = None
     work_address: Optional[str] = None
     next_of_kin_name: Optional[str] = None

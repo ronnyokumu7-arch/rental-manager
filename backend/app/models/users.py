@@ -35,3 +35,4 @@ class User(Base):
 
     tenant = relationship("Tenant", back_populates="users")
     recorded_payments = relationship("Payment", back_populates="recorded_by_user")
+    password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import admin
+from app.routers import reports
 
 from app.core.config import get_settings
 from app.jobs.scheduler import start_scheduler, stop_scheduler
@@ -61,3 +62,4 @@ app.include_router(tenant_profile.router, prefix="/api/v1")
 app.include_router(tenant_policies.router, prefix="/api/v1")
 app.include_router(contracts.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(reports.router, prefix="/api/v1")

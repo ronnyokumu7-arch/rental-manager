@@ -23,6 +23,7 @@ class Client(Base):
     email = Column(String, nullable=True)
     phone = Column(String, nullable=False, index=True)
     id_number = Column(String, nullable=True)
+    dl_number = Column(String, nullable=True)
     status = Column(
         Enum(ClientStatus),
         nullable=False,
