@@ -9,6 +9,8 @@ from app.dependencies.auth import get_current_user
 from app.models.invoices import Invoice, InvoiceStatus
 from app.models.users import User, UserRole
 from app.schemas.invoice import InvoiceCreate, InvoiceOut, InvoiceUpdate
+from app.models.tenants import Tenant
+from app.services.email import send_invoice_notification
 
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
@@ -128,6 +130,16 @@ def send_invoice(
     invoice.status = InvoiceStatus.sent
     db.commit()
     db.refresh(invoice)
+    tenant = db.query(Tenant).filter(Tenant.id == invoice.tenant_id).first()
+    if tenant:
+        send_invoice_notification(
+            to=tenant.email,
+            company_name=tenant.name,
+            invoice_number=invoice.invoice_number,
+            amount_due=str(invoice.amount_due),
+            currency=invoice.currency_code,
+            due_date=invoice.due_date.strftime("%d %b %Y"),
+        )
     return invoice
 
 

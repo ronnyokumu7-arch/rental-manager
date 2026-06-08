@@ -4,6 +4,11 @@ from datetime import datetime, timezone
 from app.db.database import SessionLocal
 from app.models.subscriptions import Subscription, SubscriptionStatus, PlanType, BillingCycle
 from app.models.tenants import Tenant
+from app.services.email import (
+    send_trial_ending_warning,
+    send_subscription_past_due,
+    send_subscription_suspended,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +18,7 @@ def run_subscription_lifecycle():
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
+        _handle_trial_ending_warnings(db, now)
         _handle_trial_conversions(db, now)
         _handle_expired_subscriptions(db, now)
         _handle_grace_period_expirations(db, now)
@@ -72,6 +78,12 @@ def _handle_expired_subscriptions(db, now):
         tenant = db.query(Tenant).filter(Tenant.id == sub.tenant_id).first()
         if tenant:
             tenant.subscription_status = SubscriptionStatus.past_due
+        if tenant:
+            send_subscription_past_due(
+                to=tenant.email,
+                company_name=tenant.name,
+                grace_period_ends_at=sub.grace_period_ends_at.strftime("%d %b %Y") if sub.grace_period_ends_at else "—",
+            )
 
 
 def _handle_grace_period_expirations(db, now):
@@ -88,3 +100,36 @@ def _handle_grace_period_expirations(db, now):
         tenant = db.query(Tenant).filter(Tenant.id == sub.tenant_id).first()
         if tenant:
             tenant.subscription_status = SubscriptionStatus.suspended
+        if tenant:
+            send_subscription_suspended(
+                to=tenant.email,
+                company_name=tenant.name,
+            )
+
+
+# add this new function and call it in run_subscription_lifecycle:
+def _handle_trial_ending_warnings(db, now):
+    """Warn tenants whose trial ends in 7 days or fewer."""
+    from datetime import timedelta
+    warning_threshold = now + timedelta(days=7)
+
+    upcoming = db.query(Subscription).filter(
+        Subscription.status.in_([
+            SubscriptionStatus.trial,
+            SubscriptionStatus.starter_trial,
+        ]),
+        Subscription.ends_at <= warning_threshold,
+        Subscription.ends_at > now,
+    ).all()
+
+    for sub in upcoming:
+        tenant = db.query(Tenant).filter(Tenant.id == sub.tenant_id).first()
+        if tenant and sub.ends_at:
+            delta = sub.ends_at - now
+            days_left = max(0, delta.days)
+            send_trial_ending_warning(
+                to=tenant.email,
+                company_name=tenant.name,
+                days_left=days_left,
+                trial_ends_at=sub.ends_at.strftime("%d %b %Y"),
+            )

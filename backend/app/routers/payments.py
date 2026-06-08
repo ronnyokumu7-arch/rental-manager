@@ -9,6 +9,8 @@ from app.models.invoices import Invoice, InvoiceStatus
 from app.models.payments import Payment, PaymentStatus
 from app.models.users import User, UserRole
 from app.schemas.payment import PaymentCreate, PaymentOut
+from app.models.tenants import Tenant
+from app.services.email import send_payment_received
 
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -79,6 +81,15 @@ def record_payment(
 
     db.commit()
     db.refresh(db_payment)
+    tenant = db.query(Tenant).filter(Tenant.id == db_payment.tenant_id).first()
+    if tenant:
+        send_payment_received(
+            to=tenant.email,
+            company_name=tenant.name,
+            invoice_number=invoice.invoice_number,
+            amount_paid=str(payload.amount),
+            currency=payload.currency_code,
+        )
     return db_payment
 
 

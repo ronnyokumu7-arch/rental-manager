@@ -8,6 +8,7 @@ from app.dependencies.auth import get_current_user
 from app.models.tenants import Tenant
 from app.models.users import User, UserRole
 from app.schemas.user import UserCreate, UserOut, UserUpdate
+from app.services.email import send_welcome_email, send_password_changed
 
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -179,6 +180,12 @@ def create_user(
             detail="A user with this email already exists",
         )
     db.refresh(db_user)
+    send_welcome_email(
+        to=db_user.email,
+        full_name=db_user.full_name,
+        role=db_user.role.value,
+        temp_password=user.password,
+    )
     return db_user
 
 
@@ -265,6 +272,11 @@ def update_user(
             detail="A user with this email already exists",
         )
     db.refresh(user)
+    if password is not None:
+        send_password_changed(
+            to=user.email,
+            full_name=user.full_name,
+        )
     return user
 
 

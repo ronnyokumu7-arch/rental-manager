@@ -13,6 +13,13 @@ from app.models.users import User
 from app.models.vehicles import Vehicle, VehicleStatus
 from app.schemas.booking import BookingCreate, BookingOut, BookingUpdate
 from app.services.contracts import create_contract_for_booking
+from app.services.email import (
+    send_booking_confirmation,
+    send_booking_confirmed,
+    send_booking_activated,
+    send_booking_completed,
+    send_booking_cancelled,
+)
 
 
 
@@ -67,6 +74,18 @@ def create_booking(
     db.add(db_booking)
     db.commit()
     create_contract_for_booking(db_booking, db)
+    if client.email:
+        send_booking_confirmation(
+            to=client.email,
+            client_name=client.full_name,
+            booking_id=db_booking.id,
+            vehicle=f"{vehicle.make} {vehicle.model} ({vehicle.year})",
+            start_date=str(db_booking.start_date),
+            end_date=str(db_booking.end_date),
+            total_amount=str(db_booking.total_amount),
+            currency=db_booking.currency_code,
+            contract_number=db_booking.contract.contract_number if db_booking.contract else "—",
+        )
     db.refresh(db_booking)
     return db_booking
 
@@ -161,6 +180,16 @@ def confirm_booking(
     booking.status = BookingStatus.confirmed
     db.commit()
     db.refresh(booking)
+    client = db.query(Client).filter(Client.id == booking.client_id).first()
+    vehicle = db.query(Vehicle).filter(Vehicle.id == booking.vehicle_id).first()
+    if client and client.email:
+        send_booking_confirmed(
+            to=client.email,
+            client_name=client.full_name,
+            booking_id=booking.id,
+            vehicle=f"{vehicle.make} {vehicle.model} ({vehicle.year})",
+            start_date=str(booking.start_date),
+        )
     return booking
 
 
@@ -192,6 +221,14 @@ def activate_booking(
     vehicle.status = VehicleStatus.rented
     db.commit()
     db.refresh(booking)
+    if client.email:
+        send_booking_activated(
+            to=client.email,
+            client_name=client.full_name,
+            booking_id=booking.id,
+            vehicle=f"{vehicle.make} {vehicle.model} ({vehicle.year})",
+            end_date=str(booking.end_date),
+        )
     return booking
 
 
@@ -210,6 +247,14 @@ def complete_booking(
     vehicle.status = VehicleStatus.available
     db.commit()
     db.refresh(booking)
+    client = db.query(Client).filter(Client.id == booking.client_id).first()
+    if client and client.email:
+        send_booking_completed(
+            to=client.email,
+            client_name=client.full_name,
+            booking_id=booking.id,
+            vehicle=f"{vehicle.make} {vehicle.model} ({vehicle.year})",
+        )
     return booking
 
 
@@ -231,6 +276,15 @@ def cancel_booking(
     booking.status = BookingStatus.cancelled
     db.commit()
     db.refresh(booking)
+    client = db.query(Client).filter(Client.id == booking.client_id).first()
+    vehicle = db.query(Vehicle).filter(Vehicle.id == booking.vehicle_id).first()
+    if client and client.email:
+        send_booking_cancelled(
+            to=client.email,
+            client_name=client.full_name,
+            booking_id=booking.id,
+            vehicle=f"{vehicle.make} {vehicle.model} ({vehicle.year})",
+        )
     return booking
 
 
